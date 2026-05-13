@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dungeon Descent</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap');
+
+/*
+  CSS Variables — satu tempat untuk semua warna.
+  Mengubah satu variabel otomatis mengubah seluruh tampilan.
+*/
+:root {
+  --bg: #0a0a0f;
+  --panel: #0f0f1a;
+  --border: #1a1a2e;
+  --gold: #e8c84a;
+  --gold-dim: #7a6420;
+  --red: #e84a4a;
+  --teal: #4ae8c8;
+  --cell: 28px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: #ccc;
+  font-family: 'Share Tech Mono', monospace;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 12px;
+}
+
+/* Efek scanline retro — pure CSS overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+.title { font-family: 'Press Start 2P', monospace; font-size: 15px; color: var(--gold); letter-spacing: 4px; text-align: center; margin-bottom: 4px; text-shadow: 0 0 20px rgba(232,200,74,0.5); }
+.subtitle { font-size: 10px; color: var(--gold-dim); letter-spacing: 2px; text-align: center; margin-bottom: 16px; }
+
+.wrapper { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+
+/* ── Panel sidebar ── */
+.panel { background: var(--panel); border: 1px solid var(--border); padding: 12px; margin-bottom: 12px; min-width: 175px; position: relative; }
+.panel::before { content:''; position:absolute; top:-1px; left:8px; right:8px; height:1px; background:var(--gold); opacity:0.3; }
+.panel-title { font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--gold-dim); letter-spacing: 2px; margin-bottom: 10px; }
+.stat-row { display:flex; justify-content:space-between; margin-bottom:5px; font-size:11px; }
+.stat-label { color:#666; }
+.stat-val { color: var(--teal); }
+.stat-val.red { color: var(--red); }
+.stat-val.gold { color: var(--gold); }
+.hp-bg { width:100%; height:7px; background:#3a0000; margin-top:4px; }
+.hp-fill { height:100%; background:var(--red); transition:width 0.3s; }
+
+/* ── Log ── */
+.log-panel { height: 130px; overflow: hidden; display: flex; flex-direction: column; gap: 3px; }
+.log-entry { font-size: 9px; color: #555; line-height: 1.5; }
+.log-entry.new { color: #bbb; }
+.log-entry.combat { color: var(--red); }
+.log-entry.good { color: var(--teal); }
+.log-entry.gold { color: var(--gold); }
+.log-entry.info { color: #888; }
+.log-entry.danger { color: #ff4444; font-weight: bold; }
+
+/* ── Canvas ── */
+.canvas-wrap { position: relative; }
+#gc { display: block; border: 1px solid var(--border); image-rendering: pixelated; }
+
+/* ── Overlay (start / mati / menang) ── */
+.overlay {
+  position: absolute; inset: 0;
+  background: rgba(10,10,15,0.92);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px;
+  z-index: 10;
+}
+.overlay.hidden { display: none; }
+.ov-title { font-family: 'Press Start 2P', monospace; font-size: 18px; text-align: center; letter-spacing: 2px; }
+.ov-title.win { color: var(--gold); text-shadow: 0 0 30px rgba(232,200,74,0.7); }
+.ov-title.lose { color: var(--red); text-shadow: 0 0 30px rgba(232,74,74,0.7); }
+.ov-sub { font-size: 11px; color: #666; text-align: center; line-height: 1.9; max-width: 280px; }
+.btn { font-family: 'Press Start 2P', monospace; font-size: 9px; background: transparent; border: 1px solid var(--gold); color: var(--gold); padding: 10px 22px; cursor: pointer; letter-spacing: 2px; transition: all .2s; }
+.btn:hover { background: var(--gold); color: var(--bg); }
+
+/* ── Keys hint ── */
+.key { display:inline-block; background:var(--border); color:#888; padding:1px 5px; font-size:8px; margin:1px; border-bottom:1px solid #333; }
+.ctrl-hint { font-size: 9px; color: #444; line-height: 2; }
+
+/* ── Legend ── */
+.leg { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:10px; color:#777; }
+.leg-sym { width:14px; font-size:12px; text-align:center; }
+
+/* ── Mobile controls ── */
+.mob { display:none; flex-direction:column; align-items:center; gap:4px; margin-top:12px; }
+.mob-row { display:flex; gap:4px; }
+.mb { width:50px; height:50px; background:var(--panel); border:1px solid var(--border); color:var(--teal); font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; }
+.mb:active { background:var(--border); }
+
+@media(max-width:620px){
+  .mob { display:flex; }
+  .sidebar { display:flex; flex-wrap:wrap; gap:8px; width:100%; max-width:440px; }
+  .sidebar > * { flex:1; min-width:160px; margin-bottom:0 !important; }
+}
+</style>
+</head>
+<body>
+
+<p class="title">⚔ DUNGEON DESCENT ⚔</p>
+<p class="subtitle">Python Engine · Flask API · Canvas Renderer</p>
+
+<div class="wrapper">
+  <!-- ── Sidebar kiri ── -->
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title">[ HERO ]</div>
+      <div class="stat-row"><span class="stat-label">Floor</span><span class="stat-val gold" id="s-floor">-</span></div>
+      <div class="stat-row"><span class="stat-label">HP</span><span class="stat-val red" id="s-hp">-</span></div>
+      <div class="hp-bg"><div class="hp-fill" id="hp-bar" style="width:100%"></div></div>
+      <div class="stat-row" style="margin-top:8px"><span class="stat-label">ATK</span><span class="stat-val" id="s-atk">-</span></div>
+      <div class="stat-row"><span class="stat-label">Kills</span><span class="stat-val" id="s-kills">0</span></div>
+      <div class="stat-row"><span class="stat-label">Steps</span><span class="stat-val" id="s-steps">0</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">[ LEGENDA ]</div>
+      <div class="leg"><span class="leg-sym" style="color:var(--teal)">@</span>Kamu</div>
+      <div class="leg"><span class="leg-sym" style="color:var(--red)">☠</span>Musuh (BFS)</div>
+      <div class="leg"><span class="leg-sym" style="color:var(--gold)">▼</span>Exit / Lantai</div>
+      <div class="leg"><span class="leg-sym" style="color:#1a1a2e;background:#1a1a2e">█</span>Tembok</div>
+      <div class="leg"><span class="leg-sym" style="color:#555">·</span>Sudah terlihat</div>
+    </div>
+
+    <div class="panel log-panel" id="log">
+      <div class="panel-title">[ LOG ]</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">[ KONTROL ]</div>
+      <div class="ctrl-hint">
+        <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Gerak<br>
+        <span class="key">↑↓←→</span> Arrow keys<br>
+        <span class="key">Space</span> Tunggu giliran<br>
+        <span class="key">R</span> Restart
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Canvas area ── -->
+  <div class="canvas-wrap">
+    <canvas id="gc"></canvas>
+
+    <!-- Overlay start -->
+    <div class="overlay" id="ov-start">
+      <div class="ov-title win">DUNGEON<br>DESCENT</div>
+      <div class="ov-sub">
+        Maze: <strong style="color:var(--gold)">Prim's Algorithm</strong><br>
+        Enemy AI: <strong style="color:var(--red)">BFS Pathfinding</strong><br>
+        Engine: <strong style="color:var(--teal)">Python + Flask</strong>
+      </div>
+      <button class="btn" id="btn-start">▶ MULAI</button>
+    </div>
+
+    <!-- Overlay mati -->
+    <div class="overlay hidden" id="ov-dead">
+      <div class="ov-title lose">YOU DIED</div>
+      <div class="ov-sub" id="ov-dead-txt"></div>
+      <button class="btn" id="btn-retry">↺ COBA LAGI</button>
+    </div>
+
+    <!-- Overlay menang -->
+    <div class="overlay hidden" id="ov-win">
+      <div class="ov-title win">VICTORY!</div>
+      <div class="ov-sub" id="ov-win-txt"></div>
+      <button class="btn" id="btn-win">▶ MAIN LAGI</button>
+    </div>
+  </div>
+
+  <!-- Mobile d-pad -->
+  <div class="mob" id="mob-ctrl">
+    <div class="mob-row"><div class="mb" id="mb-u">▲</div></div>
+    <div class="mob-row">
+      <div class="mb" id="mb-l">◀</div>
+      <div class="mb" id="mb-d">▼</div>
+      <div class="mb" id="mb-r">▶</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+  ════════════════════════════════════════════════
+  JAVASCRIPT CLIENT
+  ════════════════════════════════════════════════
+
+  Tanggung jawab JS di sini:
+  1. Komunikasi dengan Flask API (fetch)
+  2. Render state ke Canvas
+  3. Menangkap input keyboard/touch
+  4. Update UI (HP bar, log, stats)
+
+  JS TIDAK mengandung logika game — itu semua ada di Python.
+  JS hanya "menampilkan" data yang dikirim server.
+*/
+
+// ── Konstanta ────────────────────────────────────────────────────────────────
+const CELL   = 28;
+const COLS   = 21;
+const ROWS   = 21;
+const FOG_HIDDEN  = 0;
+const FOG_SEEN    = 1;
+const FOG_VISIBLE = 2;
+const WALL = 0;
+
+// ── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('gc');
+const ctx    = canvas.getContext('2d');
+canvas.width  = COLS * CELL;
+canvas.height = ROWS * CELL;
+
+// ── State lokal (hanya untuk rendering) ──────────────────────────────────────
+let gameState = null;  // data JSON terakhir dari server
+let animId    = null;
+let tick      = 0;
+let bfsPathCache = [];  // cache jalur BFS musuh (untuk visualisasi)
+
+// ── API Calls ─────────────────────────────────────────────────────────────────
+/*
+  Semua komunikasi ke server menggunakan Fetch API (modern, promise-based).
+  Format: POST JSON → terima JSON
+*/
+
+async function apiNewGame() {
+  const res  = await fetch('/api/new_game', { method: 'POST' });
+  const data = await res.json();
+  return data;
+}
+
+async function apiAction(type, dr = 0, dc = 0) {
+  const body = JSON.stringify({ type, dr, dc });
+  const res  = await fetch('/api/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body
+  });
+  return await res.json();
+}
+
+// ── Game Start ────────────────────────────────────────────────────────────────
+async function startGame() {
+  hideOverlays();
+  const data = await apiNewGame();
+  if (!data.ok) { alert('Gagal memulai game'); return; }
+  gameState = data.state;
+  bfsPathCache = [];
+  updateUI();
+  if (animId) cancelAnimationFrame(animId);
+  renderLoop();
+}
+
+// ── Input Handling ─────────────────────────────────────────────────────────────
+/*
+  Setiap keystroke → kirim action ke server → server update state → render ulang.
+  "busy" flag mencegah request ganda saat masih menunggu respons server.
+*/
+let busy = false;
+
+async function doAction(type, dr = 0, dc = 0) {
+  if (!gameState || busy) return;
+  busy = true;
+
+  const data = await apiAction(type, dr, dc);
+
+  if (data.ok && data.state) {
+    gameState = data.state;
+    updateUI();
+    checkGameEnd();
+  }
+  busy = false;
+}
+
+document.addEventListener('keydown', async e => {
+  if (!gameState) return;
+  switch (e.key) {
+    case 'ArrowUp':    case 'w': case 'W': e.preventDefault(); await doAction('move', -1,  0); break;
+    case 'ArrowDown':  case 's': case 'S': e.preventDefault(); await doAction('move',  1,  0); break;
+    case 'ArrowLeft':  case 'a': case 'A': e.preventDefault(); await doAction('move',  0, -1); break;
+    case 'ArrowRight': case 'd': case 'D': e.preventDefault(); await doAction('move',  0,  1); break;
+    case ' ':                              e.preventDefault(); await doAction('wait');          break;
+    case 'r': case 'R':                    await startGame();                                   break;
+  }
+});
+
+// Mobile buttons
+document.getElementById('mb-u').addEventListener('click', () => doAction('move', -1,  0));
+document.getElementById('mb-d').addEventListener('click', () => doAction('move',  1,  0));
+document.getElementById('mb-l').addEventListener('click', () => doAction('move',  0, -1));
+document.getElementById('mb-r').addEventListener('click', () => doAction('move',  0,  1));
+
+// Overlay buttons
+document.getElementById('btn-start').addEventListener('click', startGame);
+document.getElementById('btn-retry').addEventListener('click', startGame);
+document.getElementById('btn-win').addEventListener('click', startGame);
+
+// ── Render Loop ────────────────────────────────────────────────────────────────
+/*
+  Loop berjalan di ~60fps via requestAnimationFrame.
+  Fungsi render() membaca gameState (data dari server) lalu menggambar ke canvas.
+  Ini memisahkan "data" (dari server) dan "tampilan" (di browser).
+*/
+function renderLoop() {
+  tick++;
+  if (gameState) render();
+  animId = requestAnimationFrame(renderLoop);
+}
+
+// ── Canvas Renderer ────────────────────────────────────────────────────────────
+function render() {
+  const { grid, fog, player, enemies, exit_pos } = gameState;
+
+  // Bersihkan canvas
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // ── Gambar tile ──
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const vis = fog[r][c];
+      if (vis === FOG_HIDDEN) continue;
+
+      const x = c * CELL, y = r * CELL;
+
+      if (grid[r][c] === WALL) {
+        ctx.fillStyle = vis === FOG_VISIBLE ? '#1e1e35' : '#1a1a2e';
+        ctx.fillRect(x, y, CELL, CELL);
+      } else {
+        ctx.fillStyle = vis === FOG_VISIBLE
+          ? ((r + c) % 2 === 0 ? '#101020' : '#0e0e1c')
+          : '#0a0a14';
+        ctx.fillRect(x, y, CELL, CELL);
+        if (vis === FOG_VISIBLE) {
+          ctx.fillStyle = 'rgba(80,80,120,0.25)';
+          ctx.fillRect(x + CELL/2 - 1, y + CELL/2 - 1, 2, 2);
+        }
+      }
+
+      // Overlay fog-of-war (sudah pernah dilihat tapi tidak terlihat sekarang)
+      if (vis === FOG_SEEN) {
+        ctx.fillStyle = 'rgba(10,10,20,0.55)';
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+    }
+  }
+
+  // ── Gambar jalur BFS (visualisasi) ──
+  bfsPathCache.forEach(([r, c], i) => {
+    if (fog[r][c] !== FOG_VISIBLE) return;
+    const alpha = 0.1 * (1 - i / bfsPathCache.length);
+    ctx.fillStyle = `rgba(232,74,74,${alpha})`;
+    ctx.fillRect(c * CELL + CELL/2 - 3, r * CELL + CELL/2 - 3, 6, 6);
+  });
+
+  // ── Gambar exit ──
+  if (fog[exit_pos[0]][exit_pos[1]] !== FOG_HIDDEN) {
+    const ex = exit_pos[1] * CELL, ey = exit_pos[0] * CELL;
+    const pulse = 0.5 + 0.5 * Math.sin(tick * 0.08);
+    ctx.fillStyle = `rgba(232,200,74,${0.15 * pulse})`;
+    ctx.fillRect(ex - 2, ey - 2, CELL + 4, CELL + 4);
+    drawChar('▼', ex, ey, '#e8c84a', CELL - 6);
+  }
+
+  // ── Gambar musuh ──
+  enemies.forEach(e => {
+    if (fog[e.r][e.c] === FOG_HIDDEN) return;
+    const ex = e.c * CELL, ey = e.r * CELL;
+    const pulse = 0.4 + 0.6 * Math.sin(tick * 0.1 + e.id);
+    ctx.fillStyle = `rgba(232,74,74,${0.2 * pulse})`;
+    ctx.fillRect(ex - 1, ey - 1, CELL + 2, CELL + 2);
+    // HP bar
+    const pct = e.hp / e.max_hp;
+    ctx.fillStyle = '#3a0000';
+    ctx.fillRect(ex + 1, ey + CELL - 5, CELL - 2, 4);
+    ctx.fillStyle = pct > 0.5 ? '#e84a4a' : '#ff2020';
+    ctx.fillRect(ex + 1, ey + CELL - 5, (CELL - 2) * pct, 4);
+    drawChar('☠', ex, ey, '#e84a4a', CELL - 8);
+  });
+
+  // ── Gambar player ──
+  {
+    const px = player.c * CELL, py = player.r * CELL;
+    const pulse = 0.5 + 0.5 * Math.sin(tick * 0.12);
+    ctx.fillStyle = `rgba(74,232,200,${0.25 * pulse})`;
+    ctx.fillRect(px - 2, py - 2, CELL + 4, CELL + 4);
+    drawChar('@', px, py, '#4ae8c8', CELL - 6);
+  }
+
+  // ── Update cache BFS setiap 4 frame ──
+  if (tick % 4 === 0) updateBfsCache();
+}
+
+function drawChar(ch, x, y, color, size) {
+  ctx.fillStyle = color;
+  ctx.font = `bold ${size}px 'Share Tech Mono', monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ch, x + CELL / 2, y + CELL / 2 + 1);
+}
+
+// ── BFS Cache: jalankan BFS client-side untuk visualisasi jalur ──
+/*
+  Ini adalah satu-satunya logika "algoritma" di JS — HANYA untuk visualisasi.
+  Logika game yang sebenarnya tetap di Python (server).
+*/
+function updateBfsCache() {
+  if (!gameState || !gameState.enemies.length) { bfsPathCache = []; return; }
+  const { grid, fog, player, enemies } = gameState;
+  const visEnemies = enemies.filter(e => fog[e.r][e.c] !== FOG_HIDDEN);
+  if (!visEnemies.length) { bfsPathCache = []; return; }
+  const nearest = visEnemies.reduce((a, b) =>
+    (Math.abs(a.r - player.r) + Math.abs(a.c - player.c)) <=
+    (Math.abs(b.r - player.r) + Math.abs(b.c - player.c)) ? a : b
+  );
+  const dist = Math.abs(nearest.r - player.r) + Math.abs(nearest.c - player.c);
+  if (dist > 8 || dist <= 1) { bfsPathCache = []; return; }
+  bfsPathCache = clientBFS(grid, [nearest.r, nearest.c], [player.r, player.c]);
+}
+
+// Mini BFS client-side (hanya untuk visualisasi jalur, bukan logika game)
+function clientBFS(grid, start, goal) {
+  const [sr, sc] = start, [gr, gc] = goal;
+  const visited = new Set(), parent = new Map();
+  const queue = [[sr, sc]];
+  visited.add(sr * COLS + sc);
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  while (queue.length) {
+    const [r, c] = queue.shift();
+    if (r === gr && c === gc) {
+      const path = [];
+      let cur = [r, c];
+      while (!(cur[0] === sr && cur[1] === sc)) {
+        path.unshift(cur);
+        cur = parent.get(cur[0] * COLS + cur[1]);
+      }
+      return path;
+    }
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+      if (grid[nr][nc] === WALL) continue;
+      const key = nr * COLS + nc;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      parent.set(key, [r, c]);
+      queue.push([nr, nc]);
+    }
+  }
+  return [];
+}
+
+// ── UI Updates ─────────────────────────────────────────────────────────────────
+function updateUI() {
+  if (!gameState) return;
+  const { player, floor, total_floors, total_kills, total_steps, log } = gameState;
+  document.getElementById('s-floor').textContent  = `${floor} / ${total_floors}`;
+  document.getElementById('s-hp').textContent     = `${Math.max(0, player.hp)} / ${player.max_hp}`;
+  document.getElementById('s-atk').textContent    = `${player.atk_min}–${player.atk_max}`;
+  document.getElementById('s-kills').textContent  = total_kills;
+  document.getElementById('s-steps').textContent  = total_steps;
+  document.getElementById('hp-bar').style.width   = `${Math.max(0, player.hp / player.max_hp * 100)}%`;
+
+  // Update log
+  const logEl = document.getElementById('log');
+  // Hapus semua entry lama kecuali panel-title
+  Array.from(logEl.querySelectorAll('.log-entry')).forEach(el => el.remove());
+  log.forEach(entry => {
+    const el = document.createElement('div');
+    el.className = `log-entry ${entry.type} new`;
+    el.textContent = `› ${entry.msg}`;
+    logEl.appendChild(el);
+    setTimeout(() => el.classList.remove('new'), 400);
+  });
+}
+
+function checkGameEnd() {
+  if (!gameState) return;
+  if (!gameState.active && !gameState.won) {
+    // Mati
+    document.getElementById('ov-dead-txt').innerHTML =
+      `Lantai: ${gameState.floor} | Kills: ${gameState.total_kills}<br>Langkah: ${gameState.total_steps}`;
+    document.getElementById('ov-dead').classList.remove('hidden');
+  } else if (gameState.won) {
+    document.getElementById('ov-win-txt').innerHTML =
+      `Semua ${gameState.total_floors} lantai selesai!<br>Kills: ${gameState.total_kills} | Langkah: ${gameState.total_steps}`;
+    document.getElementById('ov-win').classList.remove('hidden');
+  }
+}
+
+function hideOverlays() {
+  ['ov-start', 'ov-dead', 'ov-win'].forEach(id =>
+    document.getElementById(id).classList.add('hidden'));
+}
+</script>
+</body>
+</html>
