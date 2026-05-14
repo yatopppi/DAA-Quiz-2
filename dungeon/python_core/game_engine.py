@@ -28,6 +28,8 @@ VISION_RADIUS = 4
 FOG_HIDDEN  = 0
 FOG_SEEN    = 1
 FOG_VISIBLE = 2
+HEALTH_HEAL = 25
+HEALTH_PACKS_BASE = 2
 
 
 # ── Data Classes ──────────────────────────────────────────────────────────────
@@ -63,6 +65,7 @@ class GameState:
     total_steps: int
     player: Player
     enemies: List[Enemy]
+    health_packs: List[Tuple[int, int]]
     grid: List[List[int]]      # WALL / FLOOR
     fog: List[List[int]]       # FOG_HIDDEN / FOG_SEEN / FOG_VISIBLE
     exit_pos: Tuple[int, int]
@@ -82,6 +85,7 @@ def new_game() -> GameState:
         total_steps=0,
         player=player,
         enemies=[],
+        health_packs=[],
         grid=[],
         fog=[],
         exit_pos=(0, 0),
@@ -124,6 +128,7 @@ def move_player(state: GameState, dr: int, dc: int) -> Dict[str, Any]:
         state.player.c = nc
         state.player.steps += 1
         state.total_steps += 1
+        _collect_health_pack(state, nr, nc)
 
         # Cek apakah sampai di exit
         if (nr, nc) == state.exit_pos:
@@ -181,6 +186,7 @@ def _init_level(state: GameState):
     # Tempatkan musuh (jumlah bertambah per lantai)
     num_enemies = 3 + state.floor
     state.enemies = []
+    state.health_packs = []
     occupied = {(1, 1), (er, ec)}
 
     for i in range(num_enemies):
@@ -194,6 +200,18 @@ def _init_level(state: GameState):
                     atk_min=3 + state.floor,
                     atk_max=6 + state.floor
                 ))
+                occupied.add((r, c))
+                break
+
+    # Tempatkan darah/health pack di sel lantai yang tersebar.
+    # Jumlahnya sedikit bertambah per lantai agar lantai yang lebih sulit
+    # tetap punya peluang pemulihan.
+    num_health_packs = HEALTH_PACKS_BASE + state.floor
+    for _ in range(num_health_packs):
+        for _ in range(50):
+            r, c = random.choice(reachable)
+            if (r, c) not in occupied and abs(r-1)+abs(c-1) >= 4:
+                state.health_packs.append((r, c))
                 occupied.add((r, c))
                 break
 
@@ -346,6 +364,23 @@ def _enemy_at(state: GameState, r: int, c: int) -> Optional[Enemy]:
     return None
 
 
+def _collect_health_pack(state: GameState, r: int, c: int):
+    """Pulihkan HP saat player menginjak health pack."""
+    pos = (r, c)
+    if pos not in state.health_packs:
+        return
+
+    state.health_packs.remove(pos)
+    before = state.player.hp
+    state.player.hp = min(state.player.max_hp, state.player.hp + HEALTH_HEAL)
+    healed = state.player.hp - before
+
+    if healed > 0:
+        _add_log(state, f"Kamu mengambil darah. +{healed} HP", "good")
+    else:
+        _add_log(state, "Kamu mengambil darah, tapi HP sudah penuh.", "info")
+
+
 def _add_log(state: GameState, msg: str, type_: str = ""):
     """Tambah entri ke log game (max 20 entri)."""
     state.log.insert(0, {"msg": msg, "type": type_})
@@ -376,6 +411,10 @@ def _serialize(state: GameState) -> Dict:
              "hp": e.hp, "max_hp": e.max_hp}
             for e in state.enemies
         ],
+        "health_packs": [
+            {"r": r, "c": c, "heal": HEALTH_HEAL}
+            for r, c in state.health_packs
+        ],
         "grid":     state.grid,
         "fog":      state.fog,
         "exit_pos": list(state.exit_pos),
@@ -405,6 +444,8 @@ if __name__ == '__main__':
                     row_str += '@·'
                 elif (r,c) == state.exit_pos:
                     row_str += '▼·'
+                elif (r,c) in state.health_packs:
+                    row_str += '+·'
                 elif any(e.r==r and e.c==c for e in state.enemies):
                     row_str += 'E·'
                 elif grid[r][c] == WALL:

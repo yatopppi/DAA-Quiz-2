@@ -137,6 +137,7 @@ body::after {
       <div class="panel-title">[ LEGENDA ]</div>
       <div class="leg"><span class="leg-sym" style="color:var(--teal)">@</span>Kamu</div>
       <div class="leg"><span class="leg-sym" style="color:var(--red)">☠</span>Musuh (BFS)</div>
+      <div class="leg"><span class="leg-sym" style="color:#ff7070">✚</span>Darah (+HP)</div>
       <div class="leg"><span class="leg-sym" style="color:var(--gold)">▼</span>Exit / Lantai</div>
       <div class="leg"><span class="leg-sym" style="color:#1a1a2e;background:#1a1a2e">█</span>Tembok</div>
       <div class="leg"><span class="leg-sym" style="color:#555">·</span>Sudah terlihat</div>
@@ -327,7 +328,7 @@ function renderLoop() {
 
 // ── Canvas Renderer ────────────────────────────────────────────────────────────
 function render() {
-  const { grid, fog, player, enemies, exit_pos } = gameState;
+  const { grid, fog, player, enemies, health_packs, exit_pos } = gameState;
 
   // Bersihkan canvas
   ctx.fillStyle = '#0a0a0f';
@@ -379,6 +380,16 @@ function render() {
     ctx.fillRect(ex - 2, ey - 2, CELL + 4, CELL + 4);
     drawChar('▼', ex, ey, '#e8c84a', CELL - 6);
   }
+
+  // ── Gambar darah / health pack ──
+  health_packs.forEach(h => {
+    if (fog[h.r][h.c] === FOG_HIDDEN) return;
+    const hx = h.c * CELL, hy = h.r * CELL;
+    const pulse = 0.45 + 0.55 * Math.sin(tick * 0.1 + h.r + h.c);
+    ctx.fillStyle = `rgba(255,80,80,${0.16 * pulse})`;
+    ctx.fillRect(hx - 1, hy - 1, CELL + 2, CELL + 2);
+    drawChar('✚', hx, hy, '#ff7070', CELL - 8);
+  });
 
   // ── Gambar musuh ──
   enemies.forEach(e => {

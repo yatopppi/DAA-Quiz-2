@@ -137,9 +137,11 @@ def api_debug():
         "player_pos": [state.player.r, state.player.c],
         "player_hp": state.player.hp,
         "num_enemies": len(state.enemies),
+        "num_health_packs": len(state.health_packs),
         "exit_pos": list(state.exit_pos),
         "enemies": [{"id": e.id, "pos": [e.r, e.c], "hp": e.hp}
-                    for e in state.enemies]
+                    for e in state.enemies],
+        "health_packs": [{"pos": [r, c]} for r, c in state.health_packs]
     })
 
 
