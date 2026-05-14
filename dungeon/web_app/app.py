@@ -103,12 +103,18 @@ def api_action():
     if state is None:
         return jsonify({"ok": False, "error": "No active game. Call /api/new_game first."}), 400
 
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "Invalid JSON body."}), 400
+
     action_type = data.get("type")
 
     if action_type == "move":
-        dr = int(data.get("dr", 0))
-        dc = int(data.get("dc", 0))
+        try:
+            dr = int(data.get("dr", 0))
+            dc = int(data.get("dc", 0))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "Move delta must be an integer."}), 400
         result = move_player(state, dr, dc)
 
     elif action_type == "wait":

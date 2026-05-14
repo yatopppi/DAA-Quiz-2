@@ -107,6 +107,9 @@ def move_player(state: GameState, dr: int, dc: int) -> Dict[str, Any]:
     if not state.active:
         return {"ok": False, "reason": "game_over"}
 
+    if abs(dr) + abs(dc) != 1:
+        return {"ok": False, "reason": "invalid_move"}
+
     nr = state.player.r + dr
     nc = state.player.c + dc
 
